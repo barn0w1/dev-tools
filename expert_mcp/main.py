@@ -6,6 +6,7 @@ Architecture:
   - FastAPI (background thread) serves the web UI and answer API
 """
 
+import socket
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -150,7 +151,6 @@ function render(questions) {
 
 function toggle(id) {
   selected = selected === id ? null : id;
-  // Re-render without re-fetching to keep textarea content
   document.querySelectorAll('.q-card').forEach(card => {
     const match = card.querySelector('.q-body');
     if (card.onclick.toString().includes(`'${id}'`)) {
@@ -239,7 +239,19 @@ async def post_skip(question_id: str):
 
 
 def start_web_server(host: str = "127.0.0.1", port: int = 8765) -> None:
-    """Start the FastAPI server in a daemon background thread."""
+    """Start the FastAPI server in a daemon background thread.
+
+    If the port is already in use, another instance is already hosting the UI.
+    In that case, skip starting a new server and share the existing one.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex((host, port)) == 0:
+            print(
+                f"Web UI already running at http://{host}:{port} — sharing existing instance.",
+                flush=True,
+            )
+            return
+
     config = uvicorn.Config(web_app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
